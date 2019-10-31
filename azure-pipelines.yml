@@ -44,13 +44,13 @@ stages:
     - upload: manifests
       artifact: manifests
 
-- stage: Deploy
-  displayName: Deploy stage
+- stage: Staging
+  displayName: Staging
   dependsOn: Build
 
   jobs:
-  - deployment: Deploy
-    displayName: Deploy
+  - deployment: DeployStaging
+    displayName: Deploy to staging
     pool:
       vmImage: $(vmImageName)
     environment: 'zenithworksMyGoApp-1915.mygoapp-ns2'
@@ -77,3 +77,34 @@ stages:
               containers: |
                 $(containerRegistry)/$(imageRepository):$(tag)
 
+- stage: Production
+  displayName: Production
+  dependsOn: Staging
+  jobs:
+  - deployment: DeployProd
+    displayName: DeployToProd
+    pool:
+      vmImage: $(vmImageName)
+    environment: 'zenithworksMyGoApp.mygoapp-ns'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: KubernetesManifest@0
+            displayName: Create imagePullSecret
+            inputs:
+              action: createSecret
+              secretName: $(imagePullSecret)
+              dockerRegistryEndpoint: $(dockerRegistryServiceConnection)
+              
+          - task: KubernetesManifest@0
+            displayName: Deploy to Kubernetes cluster
+            inputs:
+              action: deploy
+              manifests: |
+                $(Pipeline.Workspace)/manifests/deployment.yml
+                $(Pipeline.Workspace)/manifests/service.yml
+              imagePullSecrets: |
+                $(imagePullSecret)
+              containers: |
+                $(containerRegistry)/$(imageRepository):$(tag)
